@@ -1,0 +1,14 @@
+Rits is an issue tracking system that is integrated with the Git
+revision control system.  Issues are stored as text files in the
+repository for the project whose issues are tracked. Issues follow
+particular revisions of the project across merges, cherry-picks,
+rebases, etc.  The issue database consists of plain text files
+so merge conflicts can be easily resolved.
+
+Synopsis:
+
+   rits help
+   rits init
+   git issues [SWITCHES] COMMAND [COMMAND_ARGS...]
+
+

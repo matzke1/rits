@@ -1,0 +1,1277 @@
+#!/usr/bin/perl
+=pod
+
+=head1 NAME
+
+Rits - the ROSE issue tracking system
+
+=head1 SYNOPSIS
+
+git issues [GLOBAL_SWITCHES] COMMAND [COMMAND_ARGUMENTS]
+
+=head1 DESCRIPTION
+
+Rits is an issue tracking system that is integrated with the Git revision control system.  Issues are stored as text
+files in the repository for the project whose issues are tracked.  Issues follow particular revisions of the project
+across merges, cherry-picks, rebases, etc.  The text file format is simple and intuitive enough that merge conflicts can
+be easily resolved.
+
+All issue tracking operations are performed through the "git issues" (or "git issue") command, and subcommands thereof.
+
+=head1 GLOBAL SWITCHES
+
+=over
+
+=item --force
+
+Allow certain dangerous operations that would otherwise be errors.
+
+=item --dry-run
+
+Do not modify any files; instead, print the file contents to standard output.
+
+=back
+
+=head1 SELECTION
+
+Commands operate on the selected issue (or issues), and issues are selected by conjunction of the following global switches:
+
+=over
+
+=item ISSUE_ID
+
+Selects the specified issue according to its identifier.  The ISSUE_ID can be abbreviated to the initial characters of
+the ID.  An error is reported if the specified ID does not match exactly one issue.
+
+=item --title=VALUE
+
+=item --component=VALUE
+
+=item --importance=VALUE
+
+=item --state=VALUE
+
+=item --created=EMAIL
+
+=item --assigned=EMAIL
+
+=item --interested=EMAIL
+
+These correspond to properties under the "issue" stanza. If VALUE begins and ends with a slash, then it is considered to be
+a Perl regular expression, otherwise the specified value must exactly match the issue's property in order for the issue to
+be selected.  All non-regular-expression values are adjusted and/or verified before being used (that's how "--assigned=me"
+works, by being adjusted according to Git's notion of user.name and user.email). If an issue has an array value (like for
+the "interested" property), then the issue is selected if any member of the array matches.
+
+=item --desc[ription]=STRING
+
+=item --desc[ription]=/RE/
+
+Selects properties whose descriptions contain the specified string or match the specified regular expression. When
+matching strings, both the string and the description have all sequences of white space (including line-feeds) replaced
+by a single space character.
+
+=item --todo
+
+Select issues assigned to myself and which are not in a state called "abandoned" or "resolved". The
+list of states is the space separated value of the issues.finished configuration setting.
+
+=back
+
+=head1 COMMANDS
+
+If no command is specified, then the "title" command is assumed, which prints selected issue IDs and titles.
+
+=over
+
+=item init
+
+Initialize the Rits system.  This creates the "issues" directory and populates it with default dictionaries.  It also
+configures the Git repository by adding "git issues" (and "git issue") as aliases.  Other than during initialization,
+this Rits should always be run as "git issues".
+
+The configuration for Rits is stored in the "issues" section of the Git configuration.  The "init" command will not
+overwrite settings that are already present, so it is safe to run init more than once.  It is also possible to configure
+parts of Rits manually (e.g., with git-config) before running init.
+
+=item help
+
+Show this documentation.  The "--help", "-h", and "-?" global switches do the same thing.
+
+=item create
+
+Fires up the user's preferred editor (via EDITOR or VISUAL environment variable) to fill in required fields
+of a new issue.  Follow instructions in the edited file.
+
+=item rm
+
+Removes selected issues.  If more than one issue is selected, then the "--force" global switch should be specified.
+To remove all issues, run "git issues --force rm" (you will not be prompted for confirmation).  An issue is removed by
+deleting its directory.  Since issues are stored in the Git repository, they can be resurrected if necessary.  Removing
+an issue is different than setting it to a resolved or abandoned state.
+
+=item show
+
+Prints details about each selected issue.
+
+=item title [VALUE]
+
+=item component [VALUE]
+
+=item importance [VALUE]
+
+=item state [VALUE]
+
+=item created [EMAILS...]
+
+=item assigned [EMAILS...]
+
+=item interested [EMAILS...]
+
+Queries or sets the specified property of all selected issues.  When setting values, the --force global switch must
+be specified if more than one issues is selected.  When setting an array property, the values should be comma-separated,
+and the previous values of the array are replaced by the new values.  A property can be deleted by specifyig an empty string
+as its value. All values are adjusted and/or verified before the issue is updated.
+
+=item desc [edit]
+
+Queries (or interactively edits) the description for selected issues.  When editing, exactly one issue must be selected.
+The editor is controlled with the EDITOR or VISUAL environment variables.
+
+=item add [-m MESSAGE] [FILES...]
+
+Adds a comment to the indicated issue.  If the "-m" (or --mesg=MESSAGE) switch is missing then the user's editor is
+used to obtain a message. The message is allowed to be empty if files are specified.
+
+=item verify
+
+Verifies the consistency of all issues.  This is intended to be run by Git's pre-receive and pre-commit hooks.
+
+=back
+
+=head1 DICTIONARIES
+
+Certain issue properties have a value which is from a set of possible values.  For instance, the "state" property can
+have only certain values.  These kinds of properties are defined from dictionaries that are loaded by rits.  The names
+of the directories are specified in the "issues" section of Git's configuration file, and usually have a ".dict" extension.
+The dictionary files are relative to the issues.directory setting (unless they're absolute names). A dictionary file
+is simply a list of terms and their definition, one per line.  The term must be a single word and is separated from its
+optional definition by an optional ':' or '='.  Each term must be unique within a dictionary.
+
+=head1 FILE FORMAT
+
+One generally doesn't need to be too concerned with the file format because the Rits commands will normally be used
+to access the files.  However, a user might need to understand the file format when there is a merge conflict. Every
+attempt has been made to keep the format simple.
+
+The format does not define a comment style since these files are meant only to be the database for the Rits system.
+
+An issue file consists of "stanzas" each of which is introduced by a stanza name in square brackets. The left bracket must be
+in the first column.  Only certain stanza names are allowed.  There are two varieties of stanzas: free-format text stanzas,
+and stanzas that contain properties.
+
+Only one free-format text stanza is currently defined: the "[description]" stanza.  Its value is the concatenation of all
+following lines of text up to the next stanza.  Blank lines at the end of this stanza are not part of this stanza's value.
+Left square brackets ("["), backslashes ("\"), and equal signs ("=") must be escaped by prepending a backslash when they
+are the first non-space character on a line. Any occurrence of the two letters " =" at the end of a line are replaced by
+the three letters " \=".  These escapes are automatically inserted when the file is modified by Rits. Escaping
+is only necessary at the beginning and ends of lines in order to make manual editing as easy as possible.
+
+A property-containing stanza consists of lines containing a property name, an equal sign, and a property value. White space
+may appear before and after the name and equal sign and is insignificant.  Property values follow the same escaping rules
+as free-format properties with one addition:  some property values are allowed to have embedded line-feed characters, in
+which case each line-feed is prefixed with the two-character string " =" and the following line of the file becomes part
+of the property value as well (recursively).  After reading all lines of a property value, the escapes are removed from the
+value and trailing white space is removed from the final line.
+
+Multi-line property values and properties whose value ends with " =" are not encountered often, so one generally doesn't
+need to be too concerned about these corner cases.  Besides, Rits handles all these cases automatically--it's only when
+one is editing the file directly that this comes into play. Some examples will serve well to demonstrate:
+
+    first_prop = operator=
+
+    second_prop = hello =
+    world
+
+    third_prop = hello =
+    world =
+
+    fourth_prop = a + b \=
+    fifth_prop = =
+    five
+    sixth_prop ==
+    seventh_prop = \\end
+
+The first_prop value is the string "operator=".  The equal at the end of the line is not special since it is not preceded by
+a space. (It would also not be special if it were followed by a space.)
+
+
+The second_prop value is the string "hello", followed by a line-feed, followed by "world" (and not terminated with a line-feed).
+The blank line after "world" is optional.
+
+The third_prop value is the same as second_prop because trailing white-space is removed from values.  However, the blank
+line after "world =" is required. When in doubt about where a property ends, insert a blank line.
+
+The fourth_prop value is the string "a + b =". The equal is not special because it's preceded by a backslash.
+
+The fifth_prop value is a line-feed followed by the string "five".
+
+The sixth prop value is the character "=".  We could have accomplished the same thing by writing "sixth_prop = \=", which
+is the style the script uses.
+
+The seventh_prop demonstrates that the first character of the value is considered to be the beginning of a line, in which case
+it may need to be escaped. The value of this property is "\end" (one backslash).
+
+=head1 EXAMPLES
+
+To initialize the Rits system in an existing Git repository, run "rits init".  It will ask you to enter a name and email
+if they have not already been set with git-config (user.name and user.email).  It will also initialize various parameters
+under the "issues" section of the Git configuration file, and install aliases to run rits via the "git issues" command.  It
+is safe to run the init command more than once--it will only (re)initialize things that aren't already initialized.
+
+    $ ./scripts/rits init
+
+Running "git issues" with no additional arguments is the same as running "git issues title"--it prints the issue IDs and titles.
+
+    1ce3047fc2db18df The "<<" operator doesn't work for InsnSemanticsExpr
+    fd81bd2cf7403ec1 Numerous spelling errors in the tutorial
+
+To list all the issues assigned to myself I could do this:
+
+    $ git issues --assigned=me
+    1ce3047fc2db18df The "<<" operator doesn't work for InsnSemanticsExpr
+
+A more useful command might be this, which shows the issues that are assigned to me but not closed. All the details can
+be shown by adding the "show" command to the end of the line.
+
+    $ git issues --todo
+    1ce3047fc2db18df The "<<" operator doesn't work for InsnSemanticsExpr
+
+To add a couple of comments and attach a file:
+
+    $ git issue 1ce3047 add -m "Here is the compiler error" gcc-output.txt
+    $ git issue 1ce3047 add -m "That was gcc 4.4.5 by the way"
+
+To see all information about a single commit:
+
+    $ git issue 1ce3047 show
+    -------------------- 1ce3047fc2db18df --------------------
+    The "<<" operator doesn't work for InsnSemanticsExpr
+
+    state=verified, importance=medium, component=binary
+    submitted by Nathan Matzke <nathan@hoosierfocus.com>
+    assigned to  Robb Matzke <matzke1@llnl.gov>
+    watched by   A. Nother Developer <a.devel@example.com>
+    watched by   Somebody Else <else@example.com>
+
+    description:
+	I get undefined references when I do "std::cout <<*expr;" where expr
+	is InsnSemanticsExpr::TreeNodePtr.
+
+    Comment 1 by Robb Matzke <matzke1@llnl.gov> at 2012-10-05 17:28:13
+	Here is the compiler error
+	|file issues/1ce3047fc2db18df/4663791e1f4471fd
+	|1|undefined reference to `SgFunctionDeclaration::set_exceptionSpecification'
+	|2|nm -D -C -a  .libs/librose.so | grep 'set_exceptionSpecification'
+	|3|00000000024f2f3e T 
+
+    Comment 2 by Robb Matzke <matzke1@llnl.gov> at 2012-10-05 17:28:26
+	That was gcc 4.4.5 by the way
+
+To change the title to something else:
+
+    $ git issue 1ce3047 title "This is the new title"
+
+
+=head1 BUGS
+
+This program is a work in progress--eventually we'll have more useful commands. For instance, a command to merge related issues,
+commands that operate on the issue history, and better search queries.  The history commands will be able to answer questions
+about when an issue was created, in which commit the issue was first resolved, how the issue state changed over time, etc.
+
+We eventually need some sort of Web interface so end users can access the issue tracking system.  The plan is to have a
+CGI script that operates on a clone of the ROSE central master branch and a human review of submitted issues before they
+enter the central repository.  The review process will likely leverage our normal code review process.
+
+=head1 AUTHOR
+
+Robb Matzke.
+
+Copyright (C) 2012 Lawrence Livermore National Security
+
+Licensed under Revised BSD License (see COPYRIGHT file at the top of the ROSE source tree).
+
+=cut
+
+use strict;
+use Carp;
+
+
+###############################################################################################################################
+my($mydir) = $0 =~ /(.*)\//; $mydir ||= ".";
+my($myname) = $0 =~ /([^\/]+$)/; $myname ||= "rits";
+
+my(%components, %importance, %states, %releases); # dictionaries
+my($name_len) = 16;		# number of characters in a hexadecimal name
+my($abbr_len) = 5;              # the minimum number of characters in a name abbreviation (>3 to disambiguate "add" command)
+my(%opt);			# values of some global switches
+
+sub help {
+  local $_ = `(pod2man $0 |nroff -man) 2>/dev/null` ||
+	     `pod2text $0 2>/dev/null` ||
+	     `sed -ne '/^=pod/,/^=cut/p' $0 2>/dev/null`;
+  die "$0: see source file for documentation" unless $_;
+  if (open LESS, "|less") {
+    print LESS $_;
+    close LESS;
+  } else {
+    print $_;
+  }
+};
+
+# Generate a random name.
+sub gen_name {
+  return join "", map {substr("0123456789abcdef",rand(16),1)} 1..$name_len;
+}
+
+# Create a human-readable timestamp
+sub timestamp {
+  my($sec,$min,$hour,$mday,$month,$year) = gmtime;
+  return sprintf "%04d-%02d-%02d %02d:%02d:%02d GMT", 1900+$year, 1+$month, $mday, $hour, $min, $sec;
+}
+
+# Escape unprintable characters
+sub escape_unprintable {
+  for my $s (@_) {
+    $s =~ s/\\/\\\\/g;
+    $s =~ s/\007/\\a/g;
+    $s =~ s/\010/\\b/g;
+    $s =~ s/\013/\\v/g;
+    $s =~ s/\014/\\f/g;
+    $s =~ s/\015/\\r/g;
+    $s =~ s/([\000-\011\013-\037\177-\377])/sprintf "\\%03o", ord($1)/eg;
+  }
+  return @_;
+}
+
+# Escape a value for storing in the issue file. Normally, line-feeds are prefixed with " =" so the parser can tell that
+# another line follows without having to read the next line, and without having to count backslashes.  If $multiline is
+# true then don't add the " =" markers because the parser will already be expecting multiple lines and have some other
+# mechanism for marking the end.  Lines that already end with " =" will be replaced by " \=" regardless of the $multiline
+# setting.
+sub escape_for_storage {
+  my($s,$multiline) = @_;
+  $s =~ s/^(\s*)([\[\\=])/$1\\$2/mg;
+  $s =~ s/ =$/ \\=/mg;
+  $s =~ s/\n/ =\n/g unless $multiline;
+  return $s;
+}
+
+# Unescape values read from the issue file.
+sub unescape_from_storage {
+  local($_) = @_;
+  s/ =$//mg;
+  s/ \\=$/ =/g;
+  s/^(\s*)\\([\[\\=])/$1$2/mg;
+  s/\s+$//;
+  return $_;
+}
+
+# Return the name of the user's editor, or die trying.
+sub editor {
+  my($editor) = $ENV{EDITOR} || $ENV{VISUAL};
+  die "$0: no editor; please set your EDITOR environment variable\n" unless $editor;
+  return $editor;
+}
+
+# Run a git command and return the single line of output (linefeed-trimmed)
+sub git1 {
+  my($cmd) = join " ", @_;
+  local($_) = split /\n/, `git $cmd`;
+  chomp $_;
+  return $_;
+}
+
+# Construct a name in the issues directory.  If the components are joined together with slashes and appended to the
+# issue directory name (usually "issues").  If joining the components results in a string beginning with a slash, then
+# the name is not relative to the issues directory, but is absolute within the filesystem.
+sub issues_dir {
+  my($components) = join "/", @_;
+  return $components if $components =~ /^\//;
+  my($issues_dir) = git1("config issues.directory") || "issues";
+  return join "/", $issues_dir, $components;
+}
+
+# Load a dictionary where each line is a word followed by an optional definition.  The word and definition can be separated
+# from one another by white space, colon, or equal sign (the latter two of which can be surrounded by white space).
+sub load_dictionary {
+  my($dictname) = @_;
+  my($filename) = git1("config issues.$dictname") || "$dictname.dict";
+  $filename = issues_dir($filename);
+  local($_);
+  my %entries;
+  die "cannot read dictionary: $filename\n" unless -f $filename && -r _;
+  open FILE, "<", $filename or die "$filename: $!\n";
+  while (<FILE>) {
+    s/^\s*\#.*//;
+    if (my($name,$desc) = /^\s*(\w+)\s*[:=]?\s*(.*?)\s*$/) { # desc is optional
+      die "$filename:$.: component is multiply defined: $name\n" if exists $entries{$name};
+      $entries{$name} = $desc;
+    }
+  }
+  close FILE;
+  return %entries;
+}
+
+# Save a dictionary to a file.
+sub save_dictionary {
+  my($filename,%entries) = @_;
+  my($width);
+  map {$width=length if $width<length} keys %entries;
+  open DICT, ">", $filename or die "$filename: $!\n";
+  printf DICT "%-${width}s %1s\n", $_, $entries{$_} for sort keys %entries;
+  close DICT;
+}
+
+# Verify correct issue id format
+sub vfy_id {
+  local($_) = @_;
+  return "is malformed: $_" unless /^[0-9a-f]{$name_len}$/;
+  return ""; # okay
+}
+
+# Verify title consistency
+sub vfy_title {
+  local($_) = @_;
+  return "must not be empty" unless $_;
+  return "must not contain TAB characters" if /\t/;
+  return "must contain only printable characters" if /[^\040-\176]/;
+  return "must not be longer than 75 characters" if length($_)>75;
+  return "must start with a capital letter" if /^[a-z]/;
+  return ""; # okay
+}
+
+# Verify an email address (this isn't complete, but will catch most mistakes)
+sub vfy_email {
+  local($_) = @_;
+  return "must not be empty" unless $_;
+  my($name,$local,$domain) = /^\s*(.*?)\s*<(.*?)@(.*)>\s*$/;
+  return "address is malformed; should be 'NAME <LOCAL\@DOMAIN>': $_" unless defined $domain;
+  return "address is malformed: $local\@$domain" if $local eq "" || $domain eq "";
+  return "address is malformed: $local\@$domain" if length($local)>53 || length($domain)>255 || length($local)+length($domain)>255;
+  return "address local part is invalid: $local" unless $local =~ /^[-\w\.!\#\$%&\'*+\/=?^`{|}~]{1,64}$/; # not complete
+  return "address domain part is invalid: $domain" unless $domain =~ /^[a-z0-9][-a-z0-9]{0,62}(\.[a-z0-9][-a-z0-9]{0,62})*$/;
+  return ""; # okay
+}
+
+# Verify that the value is the name of a comment file.
+sub vfy_file {
+  my($value,$issue) = @_;
+  return "has malformed name: $value" unless $value =~ /^[0-9a-f]{$name_len}$/;
+  my($filename) = issues_dir($issue->{issue}{id},$value);
+  return "is not found: $value" unless -f $filename;
+  return "is not readable: $value" unless -r $filename;
+  return ""; # okay
+}
+
+# Verify a time stamp
+sub vfy_time {
+ local($_) = @_;
+ my($now_year) = (gmtime)[5] + 1900;
+ return "is malformed (should be YYYY-MM-DD HH:MM:SS): $_"
+   unless my($year,$month,$mday,$hour,$minute,$second,$tzone) = /^(\d{4})-(\d\d)-(\d\d) (\d\d):(\d\d):(\d\d)(\sGMT)?/;
+ return "has invalid year: $year" unless $year>=1970 && $year<=$now_year+1; # allow a bit into the future
+ return "has invalid month: $month" unless $month>0 && $month<=12;
+ return "has invalid day: $mday" unless $mday>0 && $mday<=(31,29,31,30,31,30,31,31,30,31,30,31)[$month];
+ return "has invalid day: $mday" if 2==$month && 29==$mday && !($year%4==0 && $year%400!=0);
+ return "has invalid hour: $hour" unless $hour>=0 && $hour<60;
+ return "has invalid minute: $minute" unless $minute>=0 && $minute<60;
+ return "has invalid second: $second" unless $second>=0 && $second<60; #allow leap seconds?
+ return ""; # okay
+}
+
+# Verify that the value comes from a set of possible values. This function returns a function that will do the verification.
+sub vfy_choices {
+  my($choices) = @_;
+  croak "choice=$choices" unless 'HASH' eq ref $choices;
+  return sub {
+    local($_) = @_;
+    return "value must be one of " . join(", ",sort keys %$choices) unless exists $choices->{$_};
+    return "";
+  }
+}
+
+# Adjust email address by expanding 'me'
+sub adj_email {
+  local($_) = @_;
+  if ($_ eq 'me') {
+    my($name) = git1("config user.name");
+    my($addr) = git1("config user.email") || "$ENV{USER}\@localhost";
+    return join " ", $name, "<$addr>";
+  } elsif (/^[^\s@]+@[^\s@]+$/) {
+    return "<$_>";
+  }
+  return $_;
+}
+
+# Adjust time stamp by expanding "now"
+sub adj_time {
+  return $_[0] eq 'now' ? timestamp : $_[0];
+}
+
+# Describes the allowed stanzas and their properties.
+my(%symtab) = ( issue => { id=>        {required=>1, vfy=>\&vfy_id},
+			   title=>     {required=>1, vfy=>\&vfy_title},
+			   component=> {required=>1, vfy=>vfy_choices(\%components)},
+			   importance=>{required=>1, vfy=>vfy_choices(\%importance)},
+			   state=>     {required=>1, vfy=>vfy_choices(\%states)},
+			   release=>   {required=>0, vfy=>vfy_choices(\%releases)},
+			   created=>   {required=>1, vfy=>\&vfy_email, adj=>\&adj_email},
+			   assigned=>  {required=>0, array=>1, vfy=>\&vfy_email, adj=>\&adj_email},
+			   interested=>{required=>0, array=>1, vfy=>\&vfy_email, adj=>\&adj_email} },
+		description => { text=>{required=>1, freeform=>1}},
+		comment => { author=>  {required=>1, vfy=>\&vfy_email, adj=>\&adj_email},
+			     time=>    {required=>1, vfy=>\&vfy_time, adj=>\&adj_time},
+			     message=> {required=>0, multiline=>1},
+			     file=>    {required=>0, array=>1, vfy=>\&vfy_file} },
+	      );
+
+# Return the list of comment ID numbers
+sub get_comment_ids {
+  my($issue) = @_;
+  return sort grep {defined} map {/^comment\.(\d+)$/} keys %$issue;
+}
+
+
+# Return the value(s) for a property.
+sub get_property {
+  my($issue,$stanzaname,$propname) = @_;
+  my($stanzadecl) = $stanzaname =~ /^(\w+)/;
+  croak "stanzaname=$stanzaname" unless $symtab{$stanzadecl};
+  croak "stanzaname=$stanzaname, propname=$propname" unless $symtab{$stanzadecl}{$propname};
+  return unless exists $issue->{$stanzaname}{$propname};
+  my @vals = $issue->{$stanzaname}{$propname};
+  @vals = @{$vals[0]} if 'ARRAY' eq ref $vals[0];
+  return @vals;
+}
+
+# Set property to a specific value.
+sub set_property {
+  my($issue,$stanzaname,$propname,@value) = @_;
+  my($stanzadecl) = $stanzaname =~ /^(\w+)/;
+  croak "stanzaname=$stanzaname (decl=$stanzadecl)" unless $symtab{$stanzadecl};
+  croak "stanzaname=$stanzaname, propname=$propname" unless $symtab{$stanzadecl}{$propname};
+  die "$stanzaname $propname is not an array property\n" if @value>1 && !$symtab{$stanzadecl}{$propname}{array};
+  for my $val (@value) {
+    $val = adjust_property($stanzaname,$propname,$val);
+    my($errstr) = verify_property($issue,$stanzaname,$propname,$val);
+    die "$stanzaname $propname $errstr\n" if $errstr;
+  }
+  if (0==@value) {
+    die "$stanzaname $propname is required\n" if $symtab{$stanzadecl}{$propname}{required};
+    delete $issue->{$stanzaname}{$propname};
+  } elsif ($symtab{$stanzadecl}{$propname}{array}) {
+    $issue->{$stanzaname}{$propname} = \@value;
+  } else {
+    $issue->{$stanzaname}{$propname} = $value[0];
+  }
+}
+
+# Initialize default properties for a stanza
+sub init_stanza_defaults {
+  my($stanza,$stanzaname) = @_;
+  my($stanzadecl) = $stanzaname =~ /^(\w+)/;
+  croak "stanzadecl=$stanzadecl" unless $symtab{$stanzadecl};
+  for my $propname (keys %{$symtab{$stanzadecl}}) {
+    if (!exists $stanza->{$propname} && exists $symtab{$stanzadecl}{$propname}{dflt}) {
+      $stanza->{$propname} = $symtab{$stanzadecl}{$propname}{dflt};
+    }
+  }
+}
+
+# Verifies the correctness of a property. Returns an empty string on success, an error string on failure.
+sub verify_property {
+  my($issue,$stanzaname,$propname,$value) = @_;
+  my($stanzadecl) = $stanzaname =~ /^(\w+)/;
+  croak "stanzaname=$stanzaname" unless $symtab{$stanzadecl};
+  croak "stanzaname=$stanzaname, propname=$propname" unless $symtab{$stanzadecl}{$propname};
+  return "must not be a multi-line value"
+    if $value=~/\n/ && (!$symtab{$stanzadecl}{$propname}{multiline} && !$symtab{$stanzadecl}{$propname}{freeform});
+  return "" unless $symtab{$stanzadecl}{$propname}{vfy};
+  return &{$symtab{$stanzadecl}{$propname}{vfy}}($value,$issue);
+}
+
+# Verifies that a stanza is correct. Returns an empty string on success, an errr string on failure.
+sub verify_stanza {
+  my($issue,$stanzaname) = @_;
+  my($stanzadecl) = $stanzaname =~ /^(\w+)/;
+  croak "stanzadecl=$stanzadecl" unless $symtab{$stanzadecl};
+  for my $propname (keys %{$symtab{$stanzadecl}}) {
+    if ($symtab{$stanzadecl}{$propname}{required} && !exists $issue->{$stanzaname}{$propname}) {
+      return "$propname is required for $stanzaname";
+    } elsif (exists $issue->{$stanzaname}{$propname}) {
+      for my $val (get_property($issue,$stanzaname,$propname)) {
+	my($errstr) = verify_property($issue,$stanzaname,$propname,$val);
+	return "$stanzaname $propname $errstr" if $errstr;
+      }
+    }
+  }
+  for my $propname (keys %{$issue->{$stanzaname}}) {
+    return "not a valid $stanzaname property: $propname" unless exists $symtab{$stanzadecl}{$propname};
+  }
+  return "";
+}
+
+# Verifies a whole issue. Returns an empty string on success, an error string on failure.
+sub verify_issue {
+  my($issue) = @_;
+  for my $stanzaname (keys %$issue) {
+    my($errstr) = verify_stanza($issue,$stanzaname);
+    return $errstr if $errstr;
+  }
+  return "";
+}
+
+# Adjust a property value
+sub adjust_property {
+  my($stanzaname,$propname,$value) = @_;
+  my($stanzadecl) = $stanzaname =~ /^(\w+)/;
+  croak "stanzaname=$stanzaname" unless $symtab{$stanzadecl};
+  croak "stanzaname=$stanzaname, propname=$propname" unless $symtab{$stanzadecl}{$propname};
+  return $value unless $symtab{$stanzadecl}{$propname}{adj};
+  return &{$symtab{$stanzadecl}{$propname}{adj}}($value);
+}
+
+# Adjust stanza properties
+sub adjust_stanza {
+  my($stanza,$stanzaname) = @_;
+  my($stanzadecl) = $stanzaname =~ /^(\w+)/;
+  croak "stanza=$stanza" unless 'HASH' eq ref $stanza;
+  croak "stanzadecl=$stanzadecl" unless $symtab{$stanzadecl};
+  for my $propname (keys %{$symtab{$stanzadecl}}) {
+    if (exists $stanza->{$propname}) {
+      $stanza->{$propname} = adjust_property($stanzaname, $propname, $stanza->{$propname});
+    }
+  }
+}
+
+sub is_freeform_stanza {
+  my($stanzadecl) = @_;
+  my(@propnames) = keys %{$symtab{$stanzadecl}};
+  return unless 1==@propnames;
+  my($propname) = $propnames[0];
+  return unless $symtab{$stanzadecl}{$propname}{freeform};
+  return $propname;
+}
+
+# Create a new, default issue not yet saved to a file.
+sub create_issue {
+  my($issue) = {};
+  set_property($issue,'issue','id',gen_name);
+  set_property($issue,'issue','created','me');
+  return $issue;
+}
+
+# Delete an issue by deleting its directory
+sub delete_issue {
+  my($issue) = @_;
+  my($dirname) = issues_dir($issue->{issue}{id});
+  die "$dirname: not an issue directory" unless -f "$dirname/issue";
+  system "rm -rf $dirname" and die "$dirname: issue deletion failed\n"
+}
+
+# Parse an issue file.
+sub load_issue {
+  my($id,$filename,$no_verify) = @_;
+  $filename ||= issues_dir($id,"issue");
+  my($stanza,$stanzaname,$stanzadecl,$ncomments);
+  my($issue) = {};
+  my($commit_stanza) = sub {
+    if ($stanza) {
+      if (my($key) = is_freeform_stanza($stanzadecl)) {
+	$stanza->{$key} = unescape_from_storage($stanza->{$key});
+      }
+      init_stanza_defaults($stanza,$stanzaname);
+      adjust_stanza($stanza,$stanzaname);
+      unless ($no_verify) {
+	my($errstr) = verify_stanza($issue,$stanzaname);
+	die "$filename:$.: $errstr\n" if $errstr;
+      }
+    }
+    ($stanza,$stanzaname,$stanzadecl) = ();
+  };
+
+  local($_);
+  open ISSUE, "<", $filename or die "$filename: $!\n";
+  while (<ISSUE>) {
+    if (my($new_stanzaname)=/^\[\s*(\w+)\s*\]\s*$/) {
+      &$commit_stanza;
+      $stanzaname = $stanzadecl = $new_stanzaname;
+      exists $symtab{$stanzadecl} or die "$filename:$.: invalid stanza: $stanzadecl\n";
+      $stanzaname .= "." . ++$ncomments if $stanzadecl eq 'comment';
+      exists $issue->{$stanzaname} and die "$filename:$.: multiply defined stanza: $stanzaname\n";
+      $stanza = $issue->{$stanzaname} = {};
+      $stanza->{id} = $id if $stanzaname eq 'issue';
+    } elsif (my($key) = is_freeform_stanza($stanzadecl)) {
+      $stanza->{$key} .= $_;
+    } elsif (my($key,$val) = /^\s*(\w+)\s*=(.*)/s) {
+      # This is an entity that is normally stored on a single line.  If the line ends with an equal sign then the next
+      # line is also part of the value (including linefeeds).  The unescape_from_storage will remove the equal signs.
+      while ($val =~ / =$/ && defined(my $more=<ISSUE>)) { $val .= $more }
+      exists $symtab{$stanzadecl}{$key} or die "$filename:$.: invalid property for $stanzaname stanza: $key\n";
+      $val = unescape_from_storage($val);
+      $val =~ s/^[ \t]+//; #but do not strip line-feeds
+      $val =~ s/\s+$/\1/s; #and strip line-feeds
+      unless ($no_verify) {
+	my($errstr) = verify_property($issue,$stanzaname, $key, $val);
+	die "$filename:$.: $stanzaname $key $errstr\n" if $errstr;
+      }
+      if ($symtab{$stanzadecl}{$key}{array}) {
+	$stanza->{$key} ||= [];
+	push @{$stanza->{$key}}, $val;
+      } elsif (exists $stanza->{$key}) {
+	die "$filename:$.: multiply defined property for $stanzaname stanza: $key\n";
+      } else {
+	$stanza->{$key} = $val;
+      }
+    } elsif (/\S/) {
+      die "$filename:$.: syntax error\n";
+    }
+  }
+  &$commit_stanza;
+  close ISSUE;
+  return $issue;
+}
+
+sub issue_to_str {
+  my($issue) = @_;
+  my($s) = "[issue]\n";
+  for my $propname (qw/title component importance state release created assigned interested/) {
+    if (exists $issue->{issue}{$propname}) {
+      my @vals = get_property($issue,'issue',$propname);
+      $s .= sprintf "%-16s = %1s\n", $propname, escape_for_storage($_) for @vals;
+    }
+  }
+  if (exists $issue->{description}{text}) {
+    my($val) = escape_for_storage($issue->{description}{text}, 'multiline');
+    $s .= "\n[description]\n" . $val . "\n";
+  }
+  for my $stanza (sort grep {/^comment\./} keys %$issue) {
+    $s .= "\n[comment]\n";
+    for my $propname (qw/author time message file/) {
+      if (exists $issue->{$stanza}{$propname}) {
+	for my $value (get_property($issue,$stanza,$propname)) {
+	  $s .= sprintf "%-15s = %1s\n", $propname, escape_for_storage($value);
+	}
+      }
+    }
+  }
+  return $s;
+}
+
+sub save_issue {
+  my($issue) = @_;
+  if ($opt{"dry-run"}) {
+    print "#-------------------- ", $issue->{issue}{id}, " --------------------\n";
+    print issue_to_str($issue);
+  } else {
+    my($filename) = issues_dir($issue->{issue}{id},"issue");
+    mkdir issues_dir();
+    mkdir issues_dir($issue->{issue}{id});
+    open ISSUE, ">", $filename or die "$filename: $!\n";
+    print ISSUE issue_to_str($issue);
+    close ISSUE;
+  }
+}
+
+# Returns a list of issue names
+sub issue_names {
+  return map {/([^\/]+)$/} glob issues_dir("[0-9a-f]"x $name_len);
+}
+
+# Returns an array of all issues. This is also an easy way to check the consistency of all issues since
+# it parses and verifies each one.
+sub issues {
+  return map {load_issue($_)} issue_names;
+}
+
+# Returns the indicated issue, or croaks.
+sub issue {
+  my($id) = @_;
+  croak "issue id is malformed: $id" unless $id =~ /^[0-9a-f]{$abbr_len,$name_len}$/;
+  my @issues = map {load_issue $_} grep {/^$id/} issue_names;
+  die "no such issue: $id\n" unless @issues;
+  die "ambiguous issue id: $id\n" if @issues > 1;
+  return $issues[0];
+}
+
+sub select_issues {
+  my($issues,$propname,$val) = @_;
+  croak "propname=$propname" unless $symtab{issue}{$propname};
+  my($re) = $1 if $val =~ /^\/(.*)\/$/;
+  my @matches;
+  for my $issue (@$issues) {
+    $val = adjust_property('issue',$propname,$val);
+    my($errstr) = verify_property($issue,'issue',$propname,$val);
+    die "issue $propname $errstr\n" if $errstr;
+    for my $pval (get_property($issue,'issue',$propname)) {
+      if (defined($re)) {
+	if ($pval =~ /$re/) {
+	  push @matches, $issue;
+	  last;
+	}
+      } elsif ($pval eq $val) {
+	push @matches, $issue;
+	last;
+      }
+    }
+  }
+  return @matches;
+}
+
+sub select_todo {
+  my($issues) = @_;
+  my($email) = adj_email("me");
+  my(@finished) = split " ", git1("config issues.finished");
+  my(@matches);
+  for my $issue (@$issues) {
+    next unless grep {$email eq $_} get_property($issue,'issue','assigned');
+    my($issue_state) = get_property($issue,'issue','state');
+    next if grep {$_ eq $issue_state} @finished;
+    push @matches, $issue;
+  }
+  return @matches;
+}
+
+###############################################################################################################################
+#							COMMANDS
+###############################################################################################################################
+
+# Initialize the issue tracking system. Be careful not to change any values that are already initialized.
+sub cmd_init {
+  local($_);
+  my($name) = git1("config user.name");
+  if ($name eq "") {
+    print "Your name: ";
+    $_ = <STDIN>; chomp;
+    git1("config user.name \"$_\"");
+  }
+  my($email) = git1("config user.email");
+  if ($email eq "") {
+    print "Your email address: ";
+    $_ = <STDIN>; chomp;
+    git1("config user.email \"$_\"");
+  }
+  my($absdir) = `cd $mydir; pwd`; chomp $absdir;
+
+  # Reset aliases.
+  git1("config alias.issue  \"!$absdir/$myname\"");
+  git1("config alias.issues \"!$absdir/$myname\"");
+
+  # Set defaults
+  git1("config issues.directory issues")           	unless git1("config issues.directory");
+  git1("config issues.components components.dict") 	unless git1("config issues.components");
+  git1("config issues.importance importance.dict") 	unless git1("config issues.importance");
+  git1("config issues.states states.dict")         	unless git1("config issues.states");
+  git1("config issues.releases releases.dict")     	unless git1("config issues.releases");
+  git1("config issues.finished \"abandoned resolved\"") unless git1("config issues.finished");
+
+  # Build default dictionaries
+  mkdir issues_dir();
+  if (! -f (my $filename = issues_dir(git1("config issues.components")))) {
+    save_dictionary($filename,
+		    source        => "Source code processing: C, C++, Java, Fortran, etc.",
+		    binary        => "Binary processing: ELF, PE, etc.",
+		    build         => "Build system: configuration, compiling, scripts, etc.",
+		    contrib       => "Any of several projects sitting about the ROSE library.",
+		    documentation => "Reference manual, tutorial, code comments, etc.");
+  }
+  if (! -f (my $filename = issues_dir(git1("config issues.importance")))) {
+    save_dictionary($filename,
+		    extreme => "This issue prevents users from using the software.",
+		    high    => "This issue should be fixed by the next bugfix release.",
+		    medium  => "This issue should be fixed by the next minor release.",
+		    low     => "This issue should be fixed by the next major release.");
+  }
+  if (! -f (my $filename = issues_dir(git1("config issues.states")))) {
+    save_dictionary($filename,
+		    created   => "Issue has been created but not verified.",
+		    verified  => "Issue is verified to be accurate.",
+		    abandoned => "Issue has been abandonded, see comments for reason.",
+		    resolved  => "Issue has been resolved.");
+  }
+  if (! -f (my $filename = issues_dir(git1("config issues.releases")))) {
+    save_dictionary($filename,
+		    major  => "Next major release.",
+		    minor  => "Next minor release.",
+		    bugfix => "Next bugfix release.");
+  }
+}
+
+# Verify that issues parse correctly.  This is a no-op since we already had read the issues from disk.
+sub cmd_verify {
+  my($issues,@args) = @_;
+  die "usage: $0 verify\n" if @args;
+  printf "%1d issue%1s\n", 0+@$issues, 1==@$issues ? "" : "s";
+}
+
+# Create a new issue
+sub cmd_create {
+  my($issue) = create_issue;
+  my %defaults = (state=>'created', created=>'me', assigned=>'me');
+  my($tmpfile) = `tempfile`; chomp $tmpfile;
+  set_property($issue,'issue',$_,$defaults{$_}) for keys %defaults;
+
+  while (1) {
+    my($description) = get_property($issue,'description','text');
+    $description =~ s/^\#/\\\#/mg;
+    open TMPFILE, ">", $tmpfile or die "$tmpfile: $!\n";
+    print TMPFILE <<EOF;
+# Creating issue @{[get_property($issue,'issue','id')]}
+# Created by @{[get_property($issue,'issue','created')]}
+#
+# Please fill in this form to create a new issue.  To cancel creation, save an empty file.
+# Lines whose first column contains "#" will be removed.
+
+# The issue title is a short (<75 characters) summary of the issue. It should start with
+# a capital letter. It must be a single line.
+#       ---------------------------------------------------------------------------
+title = @{[get_property($issue,'issue','title')]}
+#       ---------------------------------------------------------------------------
+
+
+# With which component is this issue associated?  It must be one of the following words:
+#@{[map {sprintf"\n#     %-16s - %1s", $_, $components{$_}} sort keys %components]}
+#            ------------------------------
+component  = @{[get_property($issue,'issue','component')]}
+#            ------------------------------
+
+
+# How important is this issue?  It must be one of the following words:
+#@{[map {sprintf"\n#     %-16s - %1s", $_, $importance{$_}} sort keys %importance]}
+#            ------------------------------
+importance = @{[get_property($issue,'issue','importance')]}
+#            ------------------------------
+
+
+
+# Enter the name and email address of the person you want to assign to this issue.
+# This field may be blank if desired.
+#            ------------------------------------------------------------------
+assigned   = @{[get_property($issue,'issue','assigned')]}
+#            ------------------------------------------------------------------
+
+
+# Enter a full description of the issue.  The description can be as long and wide 
+# as you like but it is customary to keep it less than 132 columns wide since that's
+# what the ROSE team uses for code width.  Any lines of the description where
+# the first column is a hash ("#") should insert a backslash ("\\") before the hash,
+# otherwise the line will be removed.
+[description]
+#------------------------------------------------------------------------------
+$description
+
+
+
+#------------------------------------------------------------------------------
+EOF
+    close TMPFILE;
+    system(editor . " $tmpfile") and die "$0: editor failed: @{[editor]} $tmpfile\n";
+    my $input = join "", map {s/^\\\#/\#/;$_} grep {!/^\#/} `cat $tmpfile`;
+    $input =~ s/\s+$//;
+    die "$0: issue creation canceled\n" unless $input =~ /\S/;
+    open TMPFILE, ">", $tmpfile or die "$tmpfile: $!\n";
+    print TMPFILE "[issue]\n$input";
+    close TMPFILE;
+    $issue = load_issue(get_property($issue,'issue','id'), $tmpfile, 'no-verify');
+    for my $propname (keys %defaults) {
+      my($value) = get_property($issue,'issue',$propname);
+      set_property($issue,'issue',$propname,$defaults{$propname}) unless $value;
+    }
+    my($errstr) = verify_issue($issue);
+    last unless $errstr;
+    print ucfirst($errstr), "\nTry again? [Y/n] ";
+    my $response = <STDIN>; chomp $response;
+    die "$0: issue creation canceled by user\n" unless $response =~ /^y/i || $response eq "";
+  }
+  save_issue($issue);
+  unlink $tmpfile;
+}
+
+# Remove issues and all their data by removing the issue's directory.
+sub cmd_rm {
+  my($issues,@args) = @_;
+  die "refusing to delete multiple issues (use --force)\n" if @$issues>1 && !$opt{force};
+  die "usage: rm\n" if @args;
+  delete_issue($_) for @$issues;
+}
+
+# Show info about issues.
+sub cmd_show {
+  my($issues,@args) = @_;
+  die "usage: show\n" if @args;
+  my $nissues;
+  for my $issue (@$issues) {
+    print "\n\n" if $nissues++;
+    print "------------------------------ ", $issue->{issue}{id}, " ------------------------------\n";
+    print get_property($issue,'issue','title'), "\n\n";
+    print join(", ", map {"$_=".(get_property $issue,'issue',$_)[0]} qw/state importance component/), "\n";
+    print "Submitted by ", get_property($issue,'issue','created'), "\n";
+    my(@assigned) = get_property($issue,'issue','assigned');
+    if (!@assigned) {
+      print "Assigned to  NOBODY\n";
+    } else {
+      print "Assigned to  $_\n" for @assigned;
+    }
+    print "Watched by   $_\n" for get_property($issue,'issue','interested');
+    my($desc) = get_property($issue,'description','text');
+    if ($desc) {
+      print "\nDescription:\n";
+      print "    $_\n" for split /\n/, $desc;
+    }
+
+    for my $cid (get_comment_ids($issue)) {
+      my($cname) = "comment.$cid";
+      print "\nComment $cid by ", get_property($issue,$cname,'author'), " at ", get_property($issue,$cname,"time"), "\n";
+      my($mesg) = get_property($issue,"comment.$cid",'message'), "\n";
+      print "    $_\n" for split /\n/, $mesg;
+      for my $file (get_property($issue,"comment.$cid",'file')) {
+	$file = issues_dir($issue->{issue}{id},$file);
+	if (-T $file) {
+	  my @lines = escape_unprintable(`cat $file`);
+	  my $width = length sprintf "%d", 1+@lines;
+	  print "\n    file $file\n";
+	  printf "    |%${width}d|%1s", $_, $lines[$_-1] for 1 .. @lines;
+	} else {
+	  printf "    |binary file $file (not shown)\n";
+	  my($what) = `file --brief $file`; chomp $what;
+	  print "    |$what\n" if $what;
+	}
+      }
+    }
+  }
+}
+
+# Show or set a property
+sub cmd_showset {
+  my($issues,$propname,@args) = @_;
+  croak "propname=$propname" unless $symtab{issue}{$propname};
+  while (@args) {
+    if ($args[0] =~ /^-/) {
+      die "unknown argument for $propname: $args[0]\n";
+    } else {
+      last;
+    }
+  }
+  if (0==@args) {
+    for my $issue (@$issues) {
+      my(@vals) = get_property($issue,'issue',$propname);
+      print $issue->{issue}{id}, " ", $_, "\n" for @vals;
+    }
+  } else {
+    die "refusing to set property for multiple issues (use --force)\n" if @$issues>1 && !$opt{force};
+    die "$propname is read-only\n" if $propname eq 'id';
+    my(@vals) = grep {$_ ne ""} map {/^\s*(.*?)\s*$/} @args;
+    for my $issue (@$issues) {
+      set_property($issue,'issue',$propname,@vals);
+      save_issue($issue);
+    }
+  }
+}
+
+sub cmd_desc {
+  my($issues,@args) = @_;
+  if (0==@args || (1==@args && 'show' eq $args[0])) {
+    for my $issue (@$issues) {
+      my($s) = get_property($issue,'description','text');
+      print $issue->{issue}{id}, " ", $_, "\n" for split /\n/, $s;
+    }
+  } elsif (1==@args && 'edit' eq $args[0]) {
+    die "desc edit: exactly one issue is needed\n" unless 1==@$issues;
+    my($tmpfile) = `tempfile`; chomp $tmpfile;
+    my($val) = get_property($issues->[0],'description','text');
+    $val =~ s/^\#/\\\#/mg;
+    open TMPFILE, ">", $tmpfile or die "$tmpfile: $!\n";
+    print TMPFILE "# Enter your description here.  Lines having a \"#\" in the first column are\n";
+    print TMPFILE "# removed, so escape them with a backslash if you want to keep them.\n";
+    print TMPFILE "#-----------------------------------------------------------------------------\n";
+    print TMPFILE $val, "\n\n\n";
+    print TMPFILE "#-----------------------------------------------------------------------------\n";
+    close TMPFILE;
+    system(editor . " $tmpfile");
+    my($newval) = join "", map {s/^\\\#/\#/;$_} grep {!/^#/} `cat $tmpfile`;
+    $newval =~ s/\s+$//;
+    set_property($issues->[0],'description','text',$newval);
+    unlink $tmpfile;
+    save_issue($issues->[0]);
+  } else {
+    die "usage: desc [show|edit]\n";
+  }
+}
+
+sub cmd_add {
+  my($issues,@args) = @_;
+  die "refusing to add comment to multiple issues (use --force)\n" if @$issues>1 && !$opt{force};
+  die "no issue specified\n" unless @$issues;
+
+  # Command-line switches and arguments
+  my(@mesg);
+  while (@args) {
+    if ($args[0] eq '--') {
+      shift @args;
+      last;
+    } elsif ($args[0] =~ /^(-m|--mesg=)(.+)/) {
+      push @mesg, $2;
+      shift @args;
+    } elsif ($args[0] eq "-m" && @args>1) {
+      push @mesg, $args[1];
+      splice @args, 0, 2;
+    } elsif ($args[0] =~ /^-/) {
+      die "usage: add [-m MESG] [FILES...]\n";
+    } else {
+      last;
+    }
+  }
+  my(@files) = @args;
+
+  # Obtain a message if one wasn't provided on the command-line
+  if (!@mesg) {
+    my($tmpfile) = `tempfile`; chomp $tmpfile;
+    open TMPFILE, ">", $tmpfile or die "$tmpfile: $!\n";
+    print TMPFILE "# Enter your comment here.  Lines having a \"#\" in the first column are removed, so\n";
+    print TMPFILE "# escape them with a backslash if you want to keep them.\n";
+    print TMPFILE "#-----------------------------------------------------------------------------\n\n\n\n";
+    print TMPFILE "#-----------------------------------------------------------------------------\n";
+    print TMPFILE "# attachment $_\n" for @files;
+    close TMPFILE;
+    system(editor . " $tmpfile") and die "$0: editor failed\n";
+    @mesg = grep {!/^\#/} `cat $tmpfile`;
+    unlink $tmpfile;
+  }
+
+  # Sanity checks
+  my($mesg) = join "", @mesg;
+  $mesg =~ s/\s*$//;
+  die "empty comment not added\n" unless $mesg=~/\S/ || @files;
+  die "$_: file does not exist or is not readable\n" for grep {!-f $_ || !-r _} @files;
+
+  # Do the work
+  for my $issue (@$issues) {
+    my(@comments) = sort grep {/^comment\.\d+$/} keys %$issue;
+    my($comment_id) = (@comments ? ($comments[-1]=~/(\d+)/)[0] : 0) + 1;
+    my($stanzaname) = "comment.$comment_id";
+    set_property($issue,$stanzaname,'author','me');
+    set_property($issue,$stanzaname,'time','now');
+    set_property($issue,$stanzaname,'message',$mesg) if defined $mesg;
+    my(@file_ids);
+    for my $src_file (@files) {
+      my($basename) = gen_name();
+      push @file_ids, $basename;
+      my($dst_file) = issues_dir($issue->{issue}{id},$basename);
+      open SRC, "<", $src_file or die "$src_file: $!\n";
+      unless ($opt{"dry-run"}) {
+	open DST, ">", $dst_file or die "$dst_file: $!\n";
+	while (<SRC>) {print DST}
+	close DST;
+      }
+      close SRC;
+      set_property($issue,$stanzaname,'file',@file_ids);
+    }
+    save_issue($issue);
+  }
+}
+
+###############################################################################################################################
+#						      MAIN PROGRAM
+###############################################################################################################################
+
+# Allow the 'init' and 'help' commands to run early, before sanity checks.
+if (@ARGV==1 && $ARGV[0] eq 'init') {
+  cmd_init;
+  exit 0;
+} elsif (@ARGV==1 && $ARGV[0] =~ /^(help|--help|-h|-\?)$/) {
+  help;
+  exit 0;
+}
+
+# Check that we're running from git.
+die "run \"$0 init\" or \"$0 help\" first\n" unless git1("config alias.issues");
+die "$0: should be run as \"git issues\"\n" unless $ENV{_} =~ /\/git$/;
+
+die "$0: please configure your user.name (see git-config)\n" unless git1("config user.name") =~ /\S/;
+die "$0: please configure your user.eamil (see git-config)\n" unless git1("config user.email") =~ /\S/;
+
+%components = load_dictionary("components");
+%importance = load_dictionary("importance");
+%states     = load_dictionary("states");
+%releases   = load_dictionary("releases");
+
+# Parse global switches
+my(@issues) = issues;
+while (@ARGV) {
+  if ($ARGV[0] =~ /^(--help|-h|-\?)$/) {
+    help;
+    exit 0;
+  } elsif ($ARGV[0] =~ /^--(force|dry-run)$/) {
+    $opt{$1} = 1;
+    shift @ARGV;
+  } elsif (my($key,$val) = $ARGV[0] =~ /^--(title|component|importance|state|created|assigned|interested)=(.*)/) {
+    @issues = select_issues(\@issues, $key, $val);
+  } elsif (my($needle) = $ARGV[0] =~ /^--desc(?:ription)?=(.*)/) {
+    shift @ARGV;
+    my($re) = $needle =~ /^\/(.*)\/$/;
+    $needle =~ s/\s+/ /g unless defined $re;
+    @issues = grep {
+      my($result);
+      my($desc) = get_property($_,'description','text');
+      if (defined $re) {
+	$result = $desc =~ /$re/;
+      } else {
+	$desc =~ s/\s+/ /g;
+	$result = 0 <= index $desc, $needle;
+      }
+      $result;
+    } @issues;
+  } elsif ($ARGV[0] eq "--todo") {
+    shift @ARGV;
+    @issues = select_todo(\@issues);
+  } elsif ($ARGV[0] =~ /^-/) {
+    die "$0: unknown global switch: $ARGV[0]\n";
+  } elsif ($ARGV[0] =~ /^[0-9a-f]{$abbr_len,$name_len}$/) {
+    my($id) = shift @ARGV;
+    @issues = grep {$_->{issue}{id} =~ /^$id/} @issues;
+    die "no such issue: $id\n" if !@issues && !issue($id);
+    die "ambiguous: $id\n" if @issues>1;
+  } else {
+    last;
+  }
+}
+
+
+
+my %cmds = (add    => \&cmd_add,
+	    create => \&cmd_create,
+	    desc   => \&cmd_desc,
+	    help   => \&help,
+	    init   => \&cmd_init,
+	    rm     => \&cmd_rm,
+	    show   => \&cmd_show,
+	    verify => \&cmd_verify,
+	   );
+
+push @ARGV, "title" unless @ARGV;
+my($cmd) = shift @ARGV;
+if ($cmds{$cmd}) {
+  &{$cmds{$cmd}}(\@issues,@ARGV);
+} elsif ($cmd eq 'assign') {
+  cmd_showset(\@issues,'assigned',@ARGV); # "assign" is an alias for "assigned"
+} elsif ($symtab{issue}{$cmd}) {
+  cmd_showset(\@issues,$cmd,@ARGV);
+} elsif ($cmd =~ /^[0-9a-f]+$/) {
+  die "issue ID numbers must be at least $abbr_len characters: $cmd\n";
+} else {
+  die "invalid command: $cmd\n" unless $cmds{$cmd};
+}
+exit 0;
+
+
