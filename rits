@@ -71,10 +71,14 @@ Selects properties whose descriptions contain the specified string or match the 
 matching strings, both the string and the description have all sequences of white space (including line-feeds) replaced
 by a single space character.
 
+=item --open
+
+Select issues that are not in a state called "abandoned" or "resolved". The list of states is the space-separated
+value of the issues.finished configuration setting.
+
 =item --todo
 
-Select issues assigned to myself and which are not in a state called "abandoned" or "resolved". The
-list of states is the space separated value of the issues.finished configuration setting.
+Select issues assigned to myself and which are not closed.  This the same as "--open --assigned=me".
 
 =back
 
@@ -870,6 +874,18 @@ sub select_todo {
   return @matches;
 }
 
+sub select_open {
+  my($issues) = @_;
+  my(@finished) = split " ", git1("config issues.finished");
+  my(@matches);
+  for my $issue (@$issues) {
+    my($issue_state) = get_property($issue,'issue','state');
+    next if grep {$_ eq $issue_state} @finished;
+    push @matches, $issue;
+  }
+  return @matches;
+}
+
 ###############################################################################################################################
 #							COMMANDS
 ###############################################################################################################################
@@ -1263,6 +1279,9 @@ while (@ARGV) {
   } elsif ($ARGV[0] eq "--todo") {
     shift @ARGV;
     @issues = select_todo(\@issues);
+  } elsif ($ARGV[0] eq "--open") {
+    shift @ARGV;
+    @issues = select_open(\@issues);
   } elsif ($ARGV[0] =~ /^-/) {
     die "$0: unknown global switch: $ARGV[0]\n";
   } elsif ($ARGV[0] =~ /^[0-9a-f]{$abbr_len,$name_len}$/) {
