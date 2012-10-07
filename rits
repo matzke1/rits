@@ -1243,6 +1243,7 @@ while (@ARGV) {
     $opt{$1} = 1;
     shift @ARGV;
   } elsif (my($key,$val) = $ARGV[0] =~ /^--(title|component|importance|state|created|assigned|interested)=(.*)/) {
+    shift @ARGV;
     @issues = select_issues(\@issues, $key, $val);
   } elsif (my($needle) = $ARGV[0] =~ /^--desc(?:ription)?=(.*)/) {
     shift @ARGV;
