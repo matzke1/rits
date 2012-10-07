@@ -318,6 +318,7 @@ my($myname) = $0 =~ /([^\/]+$)/; $myname ||= "rits";
 my(%components, %importance, %states, %releases); # dictionaries
 my($name_len) = 16;		# number of characters in a hexadecimal name
 my($abbr_len) = 5;              # the minimum number of characters in a name abbreviation (>3 to disambiguate "add" command)
+my($pager_pid);			# PID of the pager, or undefined if no pager
 my(%opt);			# values of some global switches
 
 sub help {
@@ -886,6 +887,24 @@ sub select_open {
   return @matches;
 }
 
+sub start_pager {
+  my($pager) = @_;
+  return unless $pager && !$pager_pid;
+  if ($pager_pid = open STDOUT, "|-") {
+    close STDIN;
+  } else {
+    exec $pager;
+    croak "could not start pager: $pager";
+  }
+}
+
+sub stop_pager {
+  if ($pager_pid) {
+    close STDOUT;
+    waitpid $pager_pid, 0;
+  }
+}
+
 ###############################################################################################################################
 #							COMMANDS
 ###############################################################################################################################
@@ -1054,6 +1073,7 @@ sub cmd_show {
   my($issues,@args) = @_;
   die "usage: show\n" if @args;
   my $nissues;
+  start_pager $opt{pager};
   for my $issue (@$issues) {
     print "\n\n" if $nissues++;
     print "------------------------------ ", $issue->{issue}{id}, " ------------------------------\n";
@@ -1240,6 +1260,20 @@ if (@ARGV==1 && $ARGV[0] eq 'init') {
 # Check that we're running from git.
 die "run \"$0 init\" or \"$0 help\" first\n" unless git1("config alias.issues");
 die "$0: should be run as \"git issues\"\n" unless $ENV{_} =~ /\/git$/;
+$opt{pager} = $ENV{GIT_PAGER} || git1("config pager.issues") || git1("config core.pager") || $ENV{PAGER} || "less";
+$ENV{LESS} = "FRSX" unless exists $ENV{LESS};
+
+# Parse git's command-line switches for ourself if we can get them.  Git doesn't seem to pass them to us in any other way.
+# We don't need to be rigorous, just pick off the things we want.
+my(@gitargs) = split /\0/, `cat /proc/@{[getpgrp]}/cmdline`;
+if ($gitargs[0]=~/git$/) {
+  for my $arg (@gitargs) {
+    if ($arg =~ /^(-p|--paginate|--no-pager)$/) {
+      $opt{pager} = undef; # if -p or --paginate then Git already started the pager
+    }
+  }
+}
+$SIG{__DIE__} = \&stop_pager;
 
 die "$0: please configure your user.name (see git-config)\n" unless git1("config user.name") =~ /\S/;
 die "$0: please configure your user.eamil (see git-config)\n" unless git1("config user.email") =~ /\S/;
@@ -1319,6 +1353,8 @@ if ($cmds{$cmd}) {
 } else {
   die "invalid command: $cmd\n" unless $cmds{$cmd};
 }
+
+stop_pager;
 exit 0;
 
 

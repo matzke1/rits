@@ -2,7 +2,7 @@
 title            = Rits should use the git-specified pager
 component        = software
 importance       = high
-state            = created
+state            = resolved
 created          = Robb Matzke <matzke1@llnl.gov>
 assigned         = Robb Matzke <matzke1@llnl.gov>
 
