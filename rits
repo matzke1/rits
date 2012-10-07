@@ -493,10 +493,12 @@ sub vfy_time {
 # Verify that the value comes from a set of possible values. This function returns a function that will do the verification.
 sub vfy_choices {
   my($choices) = @_;
-  croak "choice=$choices" unless 'HASH' eq ref $choices;
+  croak "choices=$choices" unless 'HASH' eq ref $choices;
   return sub {
     local($_) = @_;
-    return "value must be one of " . join(", ",sort keys %$choices) unless exists $choices->{$_};
+    return "dictionary is empty" unless 0 + keys %$choices;
+    return "value must be \"" . (keys %$choices)[0] . "\"" if 1==(keys %$choices) && $_ ne (keys %$choices)[0];
+    return "value must be one of " . join(", ",sort keys %$choices) . ": got \"$_\"" unless exists $choices->{$_};
     return "";
   }
 }
@@ -519,13 +521,24 @@ sub adj_time {
   return $_[0] eq 'now' ? timestamp : $_[0];
 }
 
+# Returns a function that returns the term from a dictionary if the dictionary has only one term.  We return a function
+# rather than the term because we want to delay the choice until it's needed.
+sub dflt_choices {
+  my($choices) = @_;
+  croak "choices=$choices" unless 'HASH' eq ref $choices;
+  return sub {
+    return undef if 1!=(keys %$choices);
+    return ((keys %$choices)[0]);
+  }
+}
+
 # Describes the allowed stanzas and their properties.
 my(%symtab) = ( issue => { id=>        {required=>1, vfy=>\&vfy_id},
 			   title=>     {required=>1, vfy=>\&vfy_title},
-			   component=> {required=>1, vfy=>vfy_choices(\%components)},
-			   importance=>{required=>1, vfy=>vfy_choices(\%importance)},
-			   state=>     {required=>1, vfy=>vfy_choices(\%states)},
-			   release=>   {required=>0, vfy=>vfy_choices(\%releases)},
+			   component=> {required=>1, vfy=>vfy_choices(\%components), dflt=>dflt_choices(\%components)},
+			   importance=>{required=>1, vfy=>vfy_choices(\%importance), dflt=>dflt_choices(\%importance)},
+			   state=>     {required=>1, vfy=>vfy_choices(\%states),     dflt=>dflt_choices(\%states)},
+			   release=>   {required=>0, vfy=>vfy_choices(\%releases),   dflt=>dflt_choices(\%releases)},
 			   created=>   {required=>1, vfy=>\&vfy_email, adj=>\&adj_email},
 			   assigned=>  {required=>0, array=>1, vfy=>\&vfy_email, adj=>\&adj_email},
 			   interested=>{required=>0, array=>1, vfy=>\&vfy_email, adj=>\&adj_email} },
@@ -584,7 +597,13 @@ sub init_stanza_defaults {
   croak "stanzadecl=$stanzadecl" unless $symtab{$stanzadecl};
   for my $propname (keys %{$symtab{$stanzadecl}}) {
     if (!exists $stanza->{$propname} && exists $symtab{$stanzadecl}{$propname}{dflt}) {
-      $stanza->{$propname} = $symtab{$stanzadecl}{$propname}{dflt};
+      my($value);
+      if ('CODE' eq ref $symtab{$stanzadecl}{$propname}{dflt}) {
+	$value = &{$symtab{$stanzadecl}{$propname}{dflt}}();
+      } else {
+	$value = $symtab{$stanzadecl}{$propname}{dflt};
+      }
+      $stanza->{$propname} = $value if defined $value;
     }
   }
 }
@@ -655,6 +674,13 @@ sub adjust_stanza {
   }
 }
 
+# Adjusts a whole issue.
+sub adjust_issue {
+  my($issue) = @_;
+  adjust_stanza($issue,$_) for keys %$issue;
+}
+
+# Returns true if the stanza is free format
 sub is_freeform_stanza {
   my($stanzadecl) = @_;
   my(@propnames) = keys %{$symtab{$stanzadecl}};
@@ -669,6 +695,7 @@ sub create_issue {
   my($issue) = {};
   set_property($issue,'issue','id',gen_name);
   set_property($issue,'issue','created','me');
+  init_stanza_defaults($issue->{$_},$_) for keys %$issue;
   return $issue;
 }
 
