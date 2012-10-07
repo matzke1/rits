@@ -1,0 +1,11 @@
+[issue]
+title            = Rits should use the git-specified pager
+component        = software
+importance       = high
+state            = created
+created          = Robb Matzke <matzke1@llnl.gov>
+assigned         = Robb Matzke <matzke1@llnl.gov>
+
+[description]
+Git commands that produce lots of output use a pager that's defined in
+the git configuration.  Rits should use that same pager for its output.

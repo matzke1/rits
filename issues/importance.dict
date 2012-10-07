@@ -1,0 +1,4 @@
+extreme This issue prevents users from using the software.
+high    This issue should be fixed by the next bugfix release.
+low     This issue should be fixed by the next major release.
+medium  This issue should be fixed by the next minor release.

@@ -1,0 +1,14 @@
+[issue]
+title            = Issue creation should default fields when there's only one choice.
+component        = software
+importance       = high
+state            = resolved
+created          = Robb Matzke <matzke1@llnl.gov>
+assigned         = Robb Matzke <matzke1@llnl.gov>
+
+[description]
+If a dictionary has only one term, then the term should automatically be
+filled in for the "git issue create" template.  For instance, if the components
+dictionary has only a "software" term, then "git issue create" should present
+a template that already has "software" filled in as the value for the
+"component field".

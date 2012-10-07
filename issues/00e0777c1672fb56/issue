@@ -1,0 +1,21 @@
+[issue]
+title            = Need to add a web browser
+component        = software
+importance       = medium
+state            = created
+created          = Robb Matzke <matzke1@llnl.gov>
+assigned         = Robb Matzke <matzke1@llnl.gov>
+
+[description]
+There is no easy way for end users to enter bugs.  The only way is for them
+to clone the git repository, create a new bug, and get their bug merged back
+into the central repo.  It would be much easier if we had a CGI-based system
+that could be deployed on a server somewhere.
+
+[comment]
+author          = Robb Matzke <matzke1@llnl.gov>
+time            = 2012-10-07 01:50:36 GMT
+message         = The CGI script would operate on a clone of the central repo.  It would either =
+push changes back to one of the review-candidate branches or make a pull =
+request.  In either case, a reviewer would check that the issue looks good =
+and change its state to "verified".
